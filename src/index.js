@@ -146,7 +146,7 @@ class Superlogin extends EventEmitter2 {
 
 			return this.checkRefresh().then(() => {
 				if (checkEndpoint(req.url, config.endpoints)) {
-					req.headers.Authorization = `Bearer ${session.token}:${session.password}`;
+					req.headers.Authorization = `Bearer ${session.token}`;
 				}
 				return req;
 			});
