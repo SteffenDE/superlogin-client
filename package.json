@@ -1,6 +1,6 @@
 {
   "name": "superlogin-client-jwt",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Javascript bindings for the SuperLogin-JWT project",
   "scripts": {
     "lint": "eslint --ext .js src",

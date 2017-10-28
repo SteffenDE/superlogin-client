@@ -146,7 +146,9 @@ class Superlogin extends EventEmitter2 {
 
       return this.checkRefresh().then(() => {
         if (checkEndpoint(new URL(req.url, req.baseURL), config.endpoints)) {
-          req.headers.Authorization = `Bearer ${session.token}`;
+          if (!req.headers.Authorization) {
+            req.headers.Authorization = `Bearer ${session.token}`;
+          }
         }
         return req;
       });
@@ -163,7 +165,7 @@ class Superlogin extends EventEmitter2 {
 
       // If there is an unauthorized error from one of our endpoints and we are logged in...
       if (checkEndpoint(error.config.url, config.endpoints) &&
-    error.response && error.response.status === 401 && this.authenticated()) {
+      error.response && error.response.status === 401 && this.authenticated()) {
         debug.warn("Not authorized");
         this._onLogout("Session expired");
       }
@@ -189,28 +191,36 @@ class Superlogin extends EventEmitter2 {
     if (!this.authenticated()) {
       return Promise.reject(new Error({ "error": "User is not authenticated" }));
     }
-    return this._http.get(`${this._config.baseUrl}/session`)
-      .catch(err => {
+    return this._http.get(`${this._config.baseUrl}/session`).catch(err => {
+      this.refresh().catch(err => {
         this._onLogout("Session expired");
         throw parseError(err);
       });
+    });
   }
 
   getSession() {
     if (!this._session) {
       this._session = JSON.parse(this.storage.getItem("superlogin.session"));
     }
+    if (this._session && !this._session.refreshToken) {
+      this._session.refreshToken = this.storage.getItem("superlogin.refreshToken");
+    }
     return this._session ? Object.assign(this._session) : null;
   }
 
   setSession(session) {
     this._session = session;
+    if (this._session.refreshToken) {
+      this.storage.setItem("superlogin.refreshToken", this._session.refreshToken);
+    }
     this.storage.setItem("superlogin.session", JSON.stringify(this._session));
     debug.info("New session set");
   }
 
   deleteSession() {
     this.storage.removeItem("superlogin.session");
+    this.storage.removeItem("superlogin.refreshToken");
     this._session = null;
   }
 
@@ -268,15 +278,13 @@ class Superlogin extends EventEmitter2 {
     const ratio = elapsed / duration;
     if (ratio > threshold) {
       debug.info("Refreshing session");
-      return this.refresh()
-        .then(session => {
-          debug.log("Refreshing session sucess", session);
-          return session;
-        })
-        .catch(err => {
-          debug.error("Refreshing session failed", err);
-          throw err;
-        });
+      return this.refresh().then(session => {
+        debug.log("Refreshing session sucess", session);
+        return session;
+      }).catch(err => {
+        debug.error("Refreshing session failed", err);
+        throw err;
+      });
     }
     return Promise.resolve();
   }
@@ -294,27 +302,38 @@ class Superlogin extends EventEmitter2 {
     }
     const estimatedServerTime = Date.now() + timeDiff;
     if (estimatedServerTime > expires) {
-      this._onLogout("Session expired");
+      // try to refresh session using the refresh token
+      this.refresh().catch(() => {
+        this._onLogout("Session expired");
+      });
     }
   }
 
   refresh() {
     const session = this.getSession();
     this._refreshInProgress = true;
-    return this._http.post(`${this._config.baseUrl}/refresh`, {})
-      .then(res => {
-        this._refreshInProgress = false;
-        if (res.data.token && res.data.expires) {
-          Object.assign(session, res.data);
-          this.setSession(session);
-          this._onRefresh(session);
-        }
-        return session;
-      })
-      .catch(err => {
-        this._refreshInProgress = false;
-        throw parseError(err);
-      });
+    let options = {};
+    if (session.expires < Date.now() && session.refreshToken) {
+      // access token is expired
+      // we'll have to use the refresh token
+      // console.log("access token expired, using refresh token");
+      options["headers"] = {
+        Authorization: `Bearer ${session.refreshToken}`
+      }
+    }
+    return this._http.post(`${this._config.baseUrl}/refresh`, {}, options).then(res => {
+      this._refreshInProgress = false;
+      if (res.data.token && res.data.expires) {
+        Object.assign(session, res.data);
+        this.setSession(session);
+        this._onRefresh(session);
+      }
+      return session;
+    })
+    .catch(err => {
+      this._refreshInProgress = false;
+      throw parseError(err);
+    });
   }
 
   authenticate() {
