@@ -2,6 +2,7 @@ import axios from "axios";
 import _debug from "debug";
 import { EventEmitter2 } from "eventemitter2";
 import URL from "url-parse";
+require("babel-polyfill");
 
 const debug = {
   log: _debug("superlogin:log"),
@@ -187,16 +188,22 @@ class Superlogin extends EventEmitter2 {
     return this._config;
   }
 
-  validateSession() {
+  async validateSession() {
     if (!this.authenticated()) {
-      return Promise.reject(new Error({ "error": "User is not authenticated" }));
+      throw new Error("User is not authenticated");
     }
-    return this._http.get(`${this._config.baseUrl}/session`).catch(err => {
-      this.refresh().catch(err => {
+    if (this._session.expires > Date.now()) {
+      return true;
+    }
+    else {
+      try {
+        await this.refresh();
+      }
+      catch (err) {
         this._onLogout("Session expired");
         throw parseError(err);
-      });
-    });
+      }
+    }
   }
 
   getSession() {
@@ -309,31 +316,33 @@ class Superlogin extends EventEmitter2 {
     }
   }
 
-  refresh() {
+  async refresh() {
     const session = this.getSession();
     this._refreshInProgress = true;
-    let options = {};
-    if (session.expires < Date.now() && session.refreshToken) {
-      // access token is expired
+    const options = {};
+    let res;
+    if (session.expires < (Date.now() + 1000 * 60) && session.refreshToken) {
+      // access token is expired or nearly expired
       // we'll have to use the refresh token
-      // console.log("access token expired, using refresh token");
+      console.log("access token expired, using refresh token");
       options["headers"] = {
         Authorization: `Bearer ${session.refreshToken}`
-      }
+      };
     }
-    return this._http.post(`${this._config.baseUrl}/refresh`, {}, options).then(res => {
-      this._refreshInProgress = false;
-      if (res.data.token && res.data.expires) {
-        Object.assign(session, res.data);
-        this.setSession(session);
-        this._onRefresh(session);
-      }
-      return session;
-    })
-    .catch(err => {
+    try {
+      res = await this._http.post(`${this._config.baseUrl}/refresh`, {}, options);
+    }
+    catch (err) {
       this._refreshInProgress = false;
       throw parseError(err);
-    });
+    }
+    this._refreshInProgress = false;
+    if (res.data.token && res.data.expires) {
+      Object.assign(session, res.data);
+      this.setSession(session);
+      this._onRefresh(session);
+    }
+    return session;
   }
 
   authenticate() {
@@ -350,67 +359,94 @@ class Superlogin extends EventEmitter2 {
     });
   }
 
-  login(credentials) {
+  async login(credentials) {
     const { usernameField, passwordField } = this._config.local;
     if (!credentials[usernameField] || !credentials[passwordField]) {
-      return Promise.reject(new Error({ error: "Username or Password missing..." }));
+      throw new Error("Username or Password missing...");
     }
-    return this._http.post(`${this._config.baseUrl}/login`, credentials, { skipRefresh: true })
-      .then(res => {
-        res.data.serverTimeDiff = res.data.issued - Date.now();
-        this.setSession(res.data);
-        this._onLogin(res.data);
-        return res.data;
-      })
-      .catch(err => {
-        this.deleteSession();
+    let res;
+    try {
+      res = await this._http.post(
+        `${this._config.baseUrl}/login`,
+        credentials, {
+          skipRefresh: true
+        }
+      );
+    }
+    catch (err) {
+      this.deleteSession();
+      throw parseError(err);
+    }
+    res.data.serverTimeDiff = res.data.issued - Date.now();
+    this.setSession(res.data);
+    this._onLogin(res.data);
+    return res.data;
+  }
 
+  async register(registration) {
+    let res;
+    try {
+      res = await this._http.post(
+        `${this._config.baseUrl}/register`,
+        registration, {
+          skipRefresh: true
+        }
+      );
+    }
+    catch (err) {
+      throw parseError(err);
+    }
+    if (res.data.user_id && res.data.token) {
+      res.data.serverTimeDiff = res.data.issued - Date.now();
+      this.setSession(res.data);
+      this._onLogin(res.data);
+    }
+    this._onRegister(registration);
+    return res.data;
+  }
+
+  async logout(msg) {
+    const session = this.getSession();
+    if (!session.dbUser) {
+      // We are only using JWTs, so the user has to delete the token locally
+      this._onLogout(msg || "Logged out");
+      return;
+    }
+    let res;
+    try {
+      res = await this._http.post(`${this._config.baseUrl}/logout`, {});
+    }
+    catch (err) {
+      this._onLogout(msg || "Logged out");
+      if (!err.response || err.response.data.status !== 401) {
         throw parseError(err);
-      });
+      }
+      return;
+    }
+    this._onLogout(msg || "Logged out");
+    return res.data;
   }
 
-  register(registration) {
-    return this._http.post(`${this._config.baseUrl}/register`, registration, { skipRefresh: true })
-      .then(res => {
-        if (res.data.user_id && res.data.token) {
-          res.data.serverTimeDiff = res.data.issued - Date.now();
-          this.setSession(res.data);
-          this._onLogin(res.data);
-        }
-        this._onRegister(registration);
-        return res.data;
-      })
-      .catch(err => {
+  async logoutAll(msg) {
+    const session = this.getSession();
+    if (!session.dbUser) {
+      // We are only using JWTs, so the user has to delete the token locally
+      this._onLogout(msg || "Logged out");
+      return;
+    }
+    let res;
+    try {
+      res = await this._http.post(`${this._config.baseUrl}/logout-all`, {});
+    }
+    catch (err) {
+      this._onLogout(msg || "Logged out");
+      if (!err.response || err.response.data.status !== 401) {
         throw parseError(err);
-      });
-  }
-
-  logout(msg) {
-    return this._http.post(`${this._config.baseUrl}/logout`, {})
-      .then(res => {
-        this._onLogout(msg || "Logged out");
-        return res.data;
-      })
-      .catch(err => {
-        this._onLogout(msg || "Logged out");
-        if (!err.response || err.response.data.status !== 401) {
-          throw parseError(err);
-        }
-      });
-  }
-
-  logoutAll(msg) {
-    return this._http.post(`${this._config.baseUrl}/logout-all`, {})
-      .then(res => {
-        this._onLogout(msg || "Logged out");
-        return res.data;
-      })
-      .catch(err => {
-        this._onLogout(msg || "Logged out");
-        if (!err.response || err.response.data.status !== 401) {
-          throw parseError(err);
-        }
-      });
+      }
+      return;
+    }
+    this._onLogout(msg || "Logged out");
+    return res.data;
   }
 
   logoutOthers() {
