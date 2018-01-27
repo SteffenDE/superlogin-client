@@ -1,3 +1,20 @@
+## 0.8.0
+- Rightfully changed the API verifyEmail to confirmEnail (by @SteffenDE)
+
+## 0.7.2
+- Fixed typescript declaration file with the update of eventemitter2 (by @polco)
+- Added support of custom field for authentication (by @ThonyFD)
+
+## 0.7.1
+- Added removeItem to the memoryStorage
+
+## 0.7.0
+- Updated dependencies
+
+## 0.6.1
+- Checking refresh using refreshed date (by @peteruithoven)
+- Fixed `socialUrl` option being overwritten (by @atoumbre)
+
 ## 0.6.0
 - Added Session and ConfigurationOptions types (by @polco)
 
