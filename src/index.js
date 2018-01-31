@@ -1,8 +1,7 @@
-import axios from "axios";
-import _debug from "debug";
-import { EventEmitter2 } from "eventemitter2";
-import URL from "url-parse";
-require("babel-polyfill");
+const axios = require("axios");
+const EventEmitter2 = require("eventemitter2").EventEmitter2;
+const _debug = require("debug");
+const URL = require("url-parse");
 
 const debug = {
   log: _debug("superlogin:log"),
