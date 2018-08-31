@@ -23,7 +23,7 @@ export default {
     babel({
       exclude: "node_modules/**",
       presets: [
-        ["env", {
+        ["@babel/preset-env", {
           "modules": false,
           "shippedProposals": true,
           "targets": {
@@ -32,11 +32,9 @@ export default {
         }]
       ],
       plugins: [
-        ["transform-runtime", {
+        ["@babel/plugin-transform-runtime", {
         "helpers": false,
-        "polyfill": false,
-        "regenerator": true,
-        "moduleName": "babel-runtime"
+        "regenerator": true
       }]],
       runtimeHelpers: true
     })

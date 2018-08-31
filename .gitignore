@@ -4,5 +4,5 @@
 .editorconfig
 node_modules/
 npm-debug.log
-lib
+lib/
 package-lock.json
