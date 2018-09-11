@@ -33,7 +33,7 @@
   "typings": "./superlogin-client.d.ts",
   "dependencies": {
     "axios": "~0.18.0",
-    "debug": "^3.1.0",
+    "debug": "^4.0.0",
     "eventemitter2": "^5.0.1",
     "url-parse": "^1.4.3"
   },
