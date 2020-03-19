@@ -34,7 +34,7 @@
   "dependencies": {
     "axios": "~0.18.0",
     "debug": "^3.1.0",
-    "eventemitter2": "^5.0.1",
+    "eventemitter2": "^6.1.0",
     "url-parse": "^1.4.3"
   },
   "devDependencies": {
